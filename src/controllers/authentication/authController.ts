@@ -1,7 +1,52 @@
 import express from "express";
 
-import { createUser, getUserByEmail } from "models/UserSchema";
-import { random, authentication } from "helpers/authHelpers";
+import { createUser, getUserByEmail } from "../../models/UserSchema";
+import { random, authentication } from "../../helpers/authHelpers";
+
+export const login = async (req: express.Request, res: express.Response) => {
+  try {
+    const { useremail, password } = req.body;
+
+    if (!useremail || !password) {
+      return res.status(400).send("Missing required fields");
+    }
+
+    const exisitingUser = await getUserByEmail(useremail).select(
+      "+authentication.salt +authentication.password"
+    );
+
+    if (!exisitingUser) {
+      return res.status(404).send("User not found");
+    }
+
+    const exceptedHash = authentication(
+      exisitingUser.authentication.salt,
+      password
+    );
+
+    if (exceptedHash !== exisitingUser.authentication.password) {
+      return res.status(401).send("Invalid password");
+    }
+
+    const salt = random();
+    exisitingUser.authentication.sessionToken = authentication(
+      salt,
+      exisitingUser._id.toString()
+    );
+
+    await exisitingUser.save();
+
+    res.cookie("SHIN-AUTH", exisitingUser.authentication.sessionToken, {
+      domain: "localhost",
+      path: "/",
+    });
+
+    return res.status(200).json(exisitingUser).end();
+  } catch (error) {
+    console.error("Error logging in user: ", error);
+    return res.status(500).send("Error logging in user");
+  }
+};
 
 export const register = async (req: express.Request, res: express.Response) => {
   try {
